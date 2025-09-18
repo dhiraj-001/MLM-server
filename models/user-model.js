@@ -39,6 +39,16 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    depositBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    earningBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     totalCashback: {
       type: Number,
       default: 0,

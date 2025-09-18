@@ -13,14 +13,6 @@ export const getQuestions = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
         
-        // Enforce minimum balance requirement
-        if (user.balance < 30) {
-            return res.status(403).json({ 
-                message: "Insufficient balance. Minimum $30 required to take the quiz",
-                insufficientBalance: true 
-            });
-        }
-        
         // Check if user already submitted today
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -34,13 +26,38 @@ export const getQuestions = async (req, res) => {
                 completed: true,
                 results: {
                     score: existingSubmission.score,
-                    total: existingSubmission.answers.length
+                    total: existingSubmission.answers.length,
+                    balanceType: existingSubmission.balanceType,
+                    reward: existingSubmission.reward
+                }
+            });
+        }
+        
+        // Check individual balances for eligibility
+        const depositEligible = user.depositBalance >= 30;
+        const earningEligible = user.earningBalance >= 30;
+        
+        if (!depositEligible && !earningEligible) {
+            return res.status(403).json({
+                message: "Insufficient balance. Minimum $30 required in either deposit or earning balance to take the quiz",
+                insufficientBalance: true,
+                balances: {
+                    depositBalance: user.depositBalance,
+                    earningBalance: user.earningBalance
                 }
             });
         }
         
         const questions = await Question.find({}, { correctAnswer: 0 });
-        res.json({ questions });
+        res.json({ 
+            questions,
+            balanceOptions: {
+                depositEligible,
+                earningEligible,
+                depositBalance: user.depositBalance,
+                earningBalance: user.earningBalance
+            }
+        });
     } catch (error) {
         console.error("Error fetching questions:", error);
         res.status(500).json({ message: "Error fetching questions" });
@@ -49,8 +66,15 @@ export const getQuestions = async (req, res) => {
 
 export const submitQuiz = async (req, res) => {
     try {
-        const { answers } = req.body;
+        const { answers, balanceType } = req.body;
         const userId = req.user._id;
+        
+        // Validate balance type
+        if (!balanceType || !['deposit', 'earning'].includes(balanceType)) {
+            return res.status(400).json({ 
+                message: "Invalid balance type. Must be 'deposit' or 'earning'" 
+            });
+        }
         
         // Check user balance
         const user = await User.findById(userId);
@@ -58,13 +82,6 @@ export const submitQuiz = async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
         
-        // Enforce minimum balance requirement
-        if (user.balance < 30) {
-            return res.status(403).json({ 
-                message: "Insufficient balance. Minimum $30 required to take the quiz" 
-            });
-        }
-
         // Check if user already submitted today
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -75,6 +92,17 @@ export const submitQuiz = async (req, res) => {
 
         if (existingSubmission) {
             return res.status(400).json({ message: "Already submitted today's quiz" });
+        }
+
+        // Check minimum balance requirement based on selected balance type
+        const selectedBalance = balanceType === 'deposit' ? user.depositBalance : user.earningBalance;
+        if (selectedBalance < 30) {
+            return res.status(403).json({
+                message: `Insufficient ${balanceType} balance. Minimum $30 required to take the quiz`,
+                insufficientBalance: true,
+                balanceType,
+                currentBalance: selectedBalance
+            });
         }
 
         // Calculate score
@@ -90,13 +118,14 @@ export const submitQuiz = async (req, res) => {
             };
         });
         
-        // Calculate reward: 2% of user's current balance
+        // Calculate reward: 2% of selected balance
         const rewardPercentage = 0.02; // 2%
-        const reward = user.balance * rewardPercentage;
+        const reward = selectedBalance * rewardPercentage;
         const accuracyPercentage = (score / questions.length) * 100;
         
-        // Update user balance
-        user.balance += reward;
+        // Update user balances. Reward is always added to earning balance.
+        user.earningBalance += reward;
+        user.balance += reward; // Keep main balance for backward compatibility
         await user.save();
 
         // Save submission with reward information
@@ -105,14 +134,15 @@ export const submitQuiz = async (req, res) => {
             answers: checkedAnswers,
             score,
             reward,
-            accuracyPercentage
+            accuracyPercentage,
+            balanceType
         });
 
         // Notify user about reward
         await createNotification(
             userId,
             "Quiz Reward Earned",
-            `You earned $${reward.toFixed(2)} for completing today's quiz with ${score}/${questions.length} correct answers!`,
+            `You earned $${reward.toFixed(2)} for completing today's quiz with ${score}/${questions.length} correct answers using your ${balanceType} balance!`,
             'reward'
         );
 
@@ -121,7 +151,10 @@ export const submitQuiz = async (req, res) => {
             score,
             total: questions.length,
             reward,
-            newBalance: user.balance
+            balanceType,
+            newBalance: user.balance,
+            newDepositBalance: user.depositBalance,
+            newEarningBalance: user.earningBalance
         });
     } catch (error) {
         console.error("Error submitting quiz:", error);
@@ -136,7 +169,9 @@ export const notifyEligibleUsersAboutQuiz = async () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        const eligibleUsers = await User.find({ balance: { $gte: 30 } });
+        const eligibleUsers = await User.find({ 
+          $expr: { $gte: [{ $add: ["$depositBalance", "$earningBalance"] }, 30] }
+        });
         
         for (const user of eligibleUsers) {
             // Check if user already submitted today
