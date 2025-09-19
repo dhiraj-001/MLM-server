@@ -69,6 +69,7 @@ const updateDepositStatus = async (req, res) => {
     if (status === "approved") {
       const user = await User.findById(deposit.user);
       user.balance += deposit.amount;
+      user.depositBalance += deposit.amount;
       await user.save();
 
       // Create notification for approved deposit
@@ -300,6 +301,7 @@ const adminAddDeposit = async (req, res) => {
     });
     // Update user balance
     user.balance += amount;
+    user.depositBalance += amount;
     await user.save();
     // Optionally, create a notification
     await createNotification(
