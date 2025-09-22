@@ -12,6 +12,7 @@ import {
   getTeamMembers,
   updateUserProfile,
   getAllWithdrawalAccounts,
+  transferBalance,
 } from "../controllers/users-controller.js";
 
 import { DepositSchema } from "../validators/deposit-validator.js";
@@ -38,6 +39,8 @@ router.get("/team-members/:userId", getTeamMembers);
 
 router.get('/quiz', authMiddleware, getQuestions);
 router.post('/quiz', authMiddleware, submitQuiz);
+
+router.post("/transfer-balance", authMiddleware, transferBalance);
 
 router.get('/withdrawal-accounts', authMiddleware, getAllWithdrawalAccounts);
 

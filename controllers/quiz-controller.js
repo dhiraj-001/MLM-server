@@ -22,7 +22,7 @@ export const getQuestions = async (req, res) => {
         });
 
         if (existingSubmission) {
-            return res.status(200).json({ 
+            return res.status(200).json({
                 completed: true,
                 results: {
                     score: existingSubmission.score,
@@ -31,6 +31,21 @@ export const getQuestions = async (req, res) => {
                     reward: existingSubmission.reward
                 }
             });
+        }
+
+        // Check for submissions from other days
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const previousSubmissions = await QuizSubmission.find({
+            user: userId,
+            submittedAt: { $lt: today }
+        }).sort({ submittedAt: -1 }).limit(1);
+
+        const hasPreviousSubmissions = previousSubmissions.length > 0;
+        let lastBalanceType = 'deposit'; // default to deposit
+
+        if (hasPreviousSubmissions) {
+            lastBalanceType = previousSubmissions[0].balanceType;
         }
         
         // Check individual balances for eligibility
@@ -49,14 +64,16 @@ export const getQuestions = async (req, res) => {
         }
         
         const questions = await Question.find({}, { correctAnswer: 0 });
-        res.json({ 
+        res.json({
             questions,
             balanceOptions: {
                 depositEligible,
                 earningEligible,
                 depositBalance: user.depositBalance,
                 earningBalance: user.earningBalance
-            }
+            },
+            hasPreviousSubmissions,
+            lastBalanceType
         });
     } catch (error) {
         console.error("Error fetching questions:", error);

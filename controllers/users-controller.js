@@ -320,9 +320,9 @@ const getReferralCommission = async (req, res) => {
               input: "$teamMembers",
               as: "member",
               in: {
-                _id: "$$member._id",
-                balance: "$$member.balance",
-                level: "$$member.level",
+                _id: "$member._id",
+                balance: "$member.balance",
+                level: "$member.level",
               },
             },
           },
@@ -448,11 +448,11 @@ const getTeamMembers = async (req, res) => {
               input: "$teamMembers",
               as: "member",
               in: {
-                _id: "$$member._id",
-                email: "$$member.email",
-                balance: "$$member.balance",
-                referredBy: "$$member.referredBy",
-                level: { $add: ["$$member.level", 1] },
+                _id: "$member._id",
+                email: "$member.email",
+                balance: "$member.balance",
+                referredBy: "$member.referredBy",
+                level: { $add: ["$member.level", 1] },
               },
             },
           },
@@ -551,6 +551,42 @@ const getAllWithdrawalAccounts = async (req, res) => {
   }
 };
 
+const transferBalance = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const userId = req.user._id;
+
+    // Validate amount
+    const transferAmount = parseFloat(amount);
+    if (isNaN(transferAmount) || transferAmount <= 0) {
+      return res.status(400).json({ message: "Invalid transfer amount" });
+    }
+
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check for sufficient earning balance
+    if (user.earningBalance < transferAmount) {
+      return res.status(400).json({ message: "Insufficient earning balance" });
+    }
+
+    // Perform transfer
+    user.earningBalance -= transferAmount;
+    user.depositBalance += transferAmount;
+
+    // Save updated user
+    await user.save();
+
+    res.status(200).json({ message: "Balance transferred successfully" });
+  } catch (error) {
+    console.error("Transfer balance error:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export {
   getUserProfile,
   createWithdrawalRequest,
@@ -563,4 +599,5 @@ export {
   getTeamMembers,
   updateUserProfile,
   getAllWithdrawalAccounts,
+  transferBalance,
 };
