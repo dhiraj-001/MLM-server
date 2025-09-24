@@ -10,6 +10,7 @@ const updateDailyQuestions = async () => {
 
         const newQuestions = await generateQuestions();
         await Question.insertMany(newQuestions);
+        // await console.log(newQuestions);
 
         console.log('Daily questions updated successfully');
     } catch (error) {
@@ -21,8 +22,8 @@ const updateDailyQuestions = async () => {
 export const startQuizCron = async () => {
 
     updateDailyQuestions();
-    // cron.schedule('0 0 * * *', async () => {
-    //     await updateDailyQuestions();
-    // });
+    cron.schedule('0 0 * * *', async () => {
+        await updateDailyQuestions();
+    });
     console.log('Quiz cron job started');
 };
