@@ -428,39 +428,19 @@ const getTeamMembers = async (req, res) => {
 
     const referralCode = user.referralCode;
 
-    const result = await User.aggregate([
-      { $match: { referralCode } },
-      {
-        $graphLookup: {
-          from: "users",
-          startWith: "$referralCode",
-          connectFromField: "referralCode",
-          connectToField: "referredBy",
-          as: "teamMembers",
-          maxDepth: 3,
-          depthField: "level",
-        },
-      },
-      {
-        $project: {
-          teamMembers: {
-            $map: {
-              input: "$teamMembers",
-              as: "member",
-              in: {
-                _id: "$member._id",
-                email: "$member.email",
-                balance: "$member.balance",
-                referredBy: "$member.referredBy",
-                level: { $add: ["$member.level", 1] },
-              },
-            },
-          },
-        },
-      },
-    ]);
+    // Direct referrals
+    const directReferrals = await User.find(
+      { referredBy: referralCode },
+      "_id email balance referredBy"
+    );
 
-    const teamMembers = result[0]?.teamMembers || [];
+    const teamMembers = directReferrals.map(ref => ({
+      _id: ref._id,
+      email: ref.email,
+      balance: ref.balance,
+      referredBy: ref.referredBy,
+      level: 1
+    }));
 
     res.status(200).json({
       userId: user._id,
