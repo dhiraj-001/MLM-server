@@ -174,53 +174,83 @@ const updateWithdrawalStatus = async (req, res) => {
 
 const getAllTeamMembers = async (req, res) => {
   try {
-    const referralCode = "admin";
+    // Find all users referred by "admin" directly (Level A)
+    const levelAMembers = await User.find({ referredBy: "admin" }).select('_id email balance referredBy referralCode');
 
-    const rootUser = await User.findOne({ referralCode });
-    if (!rootUser) {
-      return res.status(404).json({ message: "Referral code not found" });
+    let allMembers = [];
+
+    // Add Level A members
+    levelAMembers.forEach(member => {
+      allMembers.push({
+        _id: member._id,
+        email: member.email,
+        balance: member.balance,
+        referredBy: member.referredBy,
+        referralCode: member.referralCode,
+        level: 1
+      });
+    });
+
+    // Find Level B members (referred by Level A members)
+    for (const levelAMember of levelAMembers) {
+      const levelBMembers = await User.find({ referredBy: levelAMember.referralCode }).select('_id email balance referredBy referralCode');
+      levelBMembers.forEach(member => {
+        allMembers.push({
+          _id: member._id,
+          email: member.email,
+          balance: member.balance,
+          referredBy: member.referredBy,
+          referralCode: member.referralCode,
+          level: 2
+        });
+      });
+
+      // Find Level C members (referred by Level B members)
+      for (const levelBMember of levelBMembers) {
+        const levelCMembers = await User.find({ referredBy: levelBMember.referralCode }).select('_id email balance referredBy referralCode');
+        levelCMembers.forEach(member => {
+          allMembers.push({
+            _id: member._id,
+            email: member.email,
+            balance: member.balance,
+            referredBy: member.referredBy,
+            referralCode: member.referralCode,
+            level: 3
+          });
+        });
+
+        // Find Level D members (referred by Level C members)
+        for (const levelCMember of levelCMembers) {
+          const levelDMembers = await User.find({ referredBy: levelCMember.referralCode }).select('_id email balance referredBy referralCode');
+          levelDMembers.forEach(member => {
+            allMembers.push({
+              _id: member._id,
+              email: member.email,
+              balance: member.balance,
+              referredBy: member.referredBy,
+              referralCode: member.referralCode,
+              level: 4
+            });
+          });
+        }
+      }
     }
 
-    const result = await User.aggregate([
-      {
-        $match: { referralCode },
-      },
-      {
-        $graphLookup: {
-          from: "users",
-          startWith: "$referralCode",
-          connectFromField: "referralCode",
-          connectToField: "referredBy",
-          as: "teamMembers",
-          depthField: "level",
-        },
-      },
-      {
-        $project: {
-          teamMembers: {
-            $map: {
-              input: "$teamMembers",
-              as: "member",
-              in: {
-                _id: "$$member._id",
-                email: "$$member.email",
-                balance: "$$member.balance",
-                referredBy: "$$member.referredBy",
-                referralCode: "$$member.referralCode",
-                level: { $add: ["$$member.level", 1] }, // level 1 means directly under "admin"
-              },
-            },
-          },
-        },
-      },
-    ]);
+    // Remove duplicates if any
+    const uniqueMembers = allMembers.filter((member, index, self) =>
+      index === self.findIndex(m => m._id.toString() === member._id.toString())
+    );
 
-    const teamMembers = result[0]?.teamMembers || [];
+    // Sort by level then by email
+    uniqueMembers.sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return a.email.localeCompare(b.email);
+    });
 
     res.status(200).json({
-      rootReferralCode: referralCode,
-      totalMembers: teamMembers.length,
-      teamMembers: teamMembers.sort((a, b) => a.level - b.level),
+      rootReferralCode: "admin",
+      totalMembers: uniqueMembers.length,
+      teamMembers: uniqueMembers,
     });
   } catch (err) {
     console.error("Admin team fetch error:", err);
@@ -617,7 +647,7 @@ const sendBulkNotification = async (req, res) => {
     }))
 
     await Notification.insertMany(NotificationArray);
-    
+
     res.status(200).json({ message: "Bulk notifications sent successfully" });
 
   }

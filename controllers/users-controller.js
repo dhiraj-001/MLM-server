@@ -428,25 +428,96 @@ const getTeamMembers = async (req, res) => {
 
     const referralCode = user.referralCode;
 
-    // Direct referrals
-    const directReferrals = await User.find(
+    // Find all users referred by this user directly (Level A)
+    const levelAMembers = await User.find(
       { referredBy: referralCode },
-      "_id email balance referredBy"
+      "_id email balance referredBy referralCode"
     );
 
-    const teamMembers = directReferrals.map(ref => ({
-      _id: ref._id,
-      email: ref.email,
-      balance: ref.balance,
-      referredBy: ref.referredBy,
-      level: 1
-    }));
+    let allMembers = [];
+
+    // Add Level A members
+    levelAMembers.forEach(member => {
+      allMembers.push({
+        _id: member._id,
+        email: member.email,
+        balance: member.balance,
+        referredBy: member.referredBy,
+        referralCode: member.referralCode,
+        level: 1
+      });
+    });
+
+    // Find Level B members (referred by Level A members)
+    for (const levelAMember of levelAMembers) {
+      const levelBMembers = await User.find(
+        { referredBy: levelAMember.referralCode },
+        "_id email balance referredBy referralCode"
+      );
+      levelBMembers.forEach(member => {
+        allMembers.push({
+          _id: member._id,
+          email: member.email,
+          balance: member.balance,
+          referredBy: member.referredBy,
+          referralCode: member.referralCode,
+          level: 2
+        });
+      });
+
+      // Find Level C members (referred by Level B members)
+      for (const levelBMember of levelBMembers) {
+        const levelCMembers = await User.find(
+          { referredBy: levelBMember.referralCode },
+          "_id email balance referredBy referralCode"
+        );
+        levelCMembers.forEach(member => {
+          allMembers.push({
+            _id: member._id,
+            email: member.email,
+            balance: member.balance,
+            referredBy: member.referredBy,
+            referralCode: member.referralCode,
+            level: 3
+          });
+        });
+
+        // Find Level D members (referred by Level C members)
+        for (const levelCMember of levelCMembers) {
+          const levelDMembers = await User.find(
+            { referredBy: levelCMember.referralCode },
+            "_id email balance referredBy referralCode"
+          );
+          levelDMembers.forEach(member => {
+            allMembers.push({
+              _id: member._id,
+              email: member.email,
+              balance: member.balance,
+              referredBy: member.referredBy,
+              referralCode: member.referralCode,
+              level: 4
+            });
+          });
+        }
+      }
+    }
+
+    // Remove duplicates if any
+    const uniqueMembers = allMembers.filter((member, index, self) =>
+      index === self.findIndex(m => m._id.toString() === member._id.toString())
+    );
+
+    // Sort by level then by email
+    uniqueMembers.sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return a.email.localeCompare(b.email);
+    });
 
     res.status(200).json({
       userId: user._id,
       email: user.email,
-      totalTeamMembers: teamMembers.length,
-      teamMembers: teamMembers.sort((a, b) => a.level - b.level),
+      totalTeamMembers: uniqueMembers.length,
+      teamMembers: uniqueMembers,
     });
   } catch (error) {
     console.error("Get Team Members Error:", error);
